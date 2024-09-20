@@ -26,6 +26,7 @@ from .const import (
     LATEST_OD_READ_ENDPOINT,
     METER_ENDPOINT,
     OD_READ_ENDPOINT,
+    OD_READ_RETRIES,
     OD_READ_RETRY_TIME,
     TOKEN_EXPRIATION,
     USER_AGENT_TEMPLATE,
@@ -64,12 +65,16 @@ class Meter:
         )
         await asyncio.sleep(OD_READ_RETRY_TIME)
 
+        trys = 0
         # Occasionally check to see if on-demand meter reading is complete.
         while True:
+            if trys >= OD_READ_RETRIES:
+                raise SmartMeterTexasAPIError("Exceeded retries for meter reading")
             json_response = await client.request(
                 LATEST_OD_READ_ENDPOINT,
                 json={"ESIID": self.esiid},
             )
+            trys += 1
             try:
                 data = json_response["data"]
                 status = data["odrstatus"]
