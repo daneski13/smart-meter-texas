@@ -62,6 +62,7 @@ class Meter:
             OD_READ_ENDPOINT,
             json={"ESIID": self.esiid, "MeterNumber": self.meter},
         )
+        await asyncio.sleep(OD_READ_RETRY_TIME)
 
         # Occasionally check to see if on-demand meter reading is complete.
         while True:
