@@ -16,6 +16,7 @@ import OpenSSL.crypto as crypto
 from aiohttp import ClientSession
 from dateutil.tz import gettz
 from tenacity import retry, retry_if_exception_type
+import pandas as pd
 
 from .const import (
     AUTH_ENDPOINT,
@@ -170,6 +171,75 @@ class Meter:
                                 self.interval = surplus
                         return self.interval
 
+    async def get_interval(self, client: Client, start_date: datetime.datetime, end_date: datetime.datetime):
+        """Returns the 15 minute interval consumption data for a given date range"""
+        retries = 1
+        while retries <= 3:
+            _LOGGER.debug("Getting Interval data")
+            json_response = await client.request(
+                INTERVAL_SYNCH,
+                json={
+                    "startDate": start_date.strftime("%m/%d/%Y"),
+                    "endDate": end_date.strftime("%m/%d/%Y"),
+                    "reportFormat": "JSON",
+                    "ESIID": [self.esiid],
+                    "versionDate": None,
+                    "readDate": None,
+                    "versionNum": None,
+                    "dataType": None,
+                },
+            )
+            try:
+                energy_data = json_response["data"]["energyData"]
+                length = len(energy_data)
+                if length == 0:
+                    raise SmartMeterTexasAPIError(
+                        "No energy data available for the date range")
+                interval_start = []
+                interval_end = []
+                types = []
+                usage = []
+                est_actual = []
+                for entry in energy_data:
+                    unparsed_usage = entry["RD"]
+                    date = entry["DT"]
+                    e_type = entry["RT"]
+                    unparsed_usage = [
+                        i for i in unparsed_usage.split(",") if i != ""]
+
+                    time_delta = datetime.timedelta(minutes=15)
+                    time = datetime.datetime.strptime(
+                        date, "%m/%d/%Y").replace(tzinfo=gettz("America/Chicago"))
+                    for use in unparsed_usage:
+                        interval_start.append(time)
+                        interval_end.append(time + time_delta)
+                        types.append("Consumption" if e_type ==
+                                     "C" else "Surplus Generation")
+                        parsed_usage = use.split("-")
+                        usage.append(float(parsed_usage[0]))
+                        est_actual.append(parsed_usage[1])
+
+                        time += time_delta
+                df = pd.DataFrame(
+                    {
+                        "USAGE_START_TIME": interval_start,
+                        "USAGE_END_TIME": interval_end,
+                        "USAGE_KWH": usage,
+                        "ESTIMATED_ACTUAL": pd.Categorical(est_actual),
+                        "CONSUMPTION_SURPLUSGENERATION": pd.Categorical(types),
+                    }
+                )
+                self.interval_df = df
+                return self.interval_df
+            except KeyError:
+                if retries >= 3:
+                    raise SmartMeterTexasAPIError(
+                        f"Error parsing response: {json_response}"
+                    )
+                _LOGGER.error("Error reading data: ", json_response)
+                retries += 1
+                continue
+
     @property
     def reading(self):
         """Returns the latest meter reading in kWh."""
@@ -189,6 +259,29 @@ class Meter:
     def read_15min(self):
         """Returns the list of date/times and the consumption rate"""
         return self.interval
+
+    @property
+    def read_interval(self):
+        """Returns a DataFrame of 15 minute interval data"""
+        return self.interval_df
+
+    @property
+    def read_interval_consumption(self):
+        """Returns the total consumption over the interval period"""
+        consumption = self.interval_df[self.interval_df["CONSUMPTION_SURPLUSGENERATION"]
+                                       == "Consumption"]["USAGE_KWH"].sum()
+        start = self.interval_df["USAGE_START_TIME"].min()
+        end = self.interval_df["USAGE_END_TIME"].max()
+        return consumption, start, end
+
+    @property
+    def read_interval_surplus(self):
+        """Returns the total surplus generation over the interval period"""
+        surplus = self.interval_df[self.interval_df["CONSUMPTION_SURPLUSGENERATION"]
+                                   == "Surplus Generation"]["USAGE_KWH"].sum()
+        start = self.interval_df["USAGE_START_TIME"].min()
+        end = self.interval_df["USAGE_END_TIME"].max()
+        return surplus, start, end
 
 
 class Account:
