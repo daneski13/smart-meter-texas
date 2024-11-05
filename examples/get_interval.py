@@ -18,8 +18,8 @@ logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 username = os.environ["SMTUSER"]
 password = os.environ["SMTPW"]
 
-start_date = datetime.datetime(2024, 9, 1)
-end_date = datetime.datetime(2024, 9, 27)
+start_date = datetime.datetime(2024, 7, 1)
+end_date = datetime.datetime(2024, 11, 3)
 
 timezone = pytz.timezone("America/Chicago")
 
@@ -40,8 +40,16 @@ async def main():
         for meter in meters:
             print("Reading meter...")
             await meter.get_interval(client, start_date, end_date)
-            print(meter.read_interval.head(5))
-            print(meter.read_interval.tail(5))
+
+            # Note that because this is a reference, the underlying dataframe will now be in the local timezone
+            # for all interval properties
+            df = meter.read_interval
+            df["USAGE_START_TIME"] = df["USAGE_START_TIME"].dt.tz_convert(
+                "America/Chicago")
+            df["USAGE_END_TIME"] = df["USAGE_END_TIME"].dt.tz_convert(
+                "America/Chicago")
+            print(df.head(5))
+            print(df.tail(5))
 
             # Get total consumption for the interval
             usage, start, end = meter.read_interval_consumption

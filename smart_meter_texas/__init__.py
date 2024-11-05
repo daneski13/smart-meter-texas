@@ -173,6 +173,8 @@ class Meter:
 
     async def get_interval(self, client: Client, start_date: datetime.datetime, end_date: datetime.datetime):
         """Returns the 15 minute interval consumption data for a given date range"""
+        start_date.replace(tzinfo=gettz("America/Chicago"))
+        end_date.replace(tzinfo=gettz("America/Chicago"))
         retries = 1
         while retries <= 3:
             _LOGGER.debug("Getting Interval data")
@@ -207,19 +209,22 @@ class Meter:
                     unparsed_usage = [
                         i for i in unparsed_usage.split(",") if i != ""]
 
+                    # Timezone aware date
+                    time = dateutil.parser.parse(date).replace(
+                        tzinfo=gettz("America/Chicago"))
+                    time = time.astimezone(datetime.timezone.utc)
+
                     time_delta = datetime.timedelta(minutes=15)
-                    time = datetime.datetime.strptime(
-                        date, "%m/%d/%Y").replace(tzinfo=gettz("America/Chicago"))
                     for use in unparsed_usage:
                         interval_start.append(time)
-                        interval_end.append(time + time_delta)
+                        time += time_delta
+                        interval_end.append(time)
                         types.append("Consumption" if e_type ==
                                      "C" else "Surplus Generation")
                         parsed_usage = use.split("-")
                         usage.append(float(parsed_usage[0]))
                         est_actual.append(parsed_usage[1])
 
-                        time += time_delta
                 df = pd.DataFrame(
                     {
                         "USAGE_START_TIME": interval_start,
