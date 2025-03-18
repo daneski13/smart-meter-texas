@@ -44,7 +44,7 @@ __author__ = "Graham Wetzler"
 __email__ = "graham@wetzler.dev"
 __version__ = "0.5.5"
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger()
 
 
 class Meter:
@@ -181,14 +181,14 @@ class Meter:
             json_response = await client.request(
                 INTERVAL_SYNCH,
                 json={
-                    "startDate": start_date.strftime("%m/%d/%Y"),
-                    "endDate": end_date.strftime("%m/%d/%Y"),
-                    "reportFormat": "JSON",
                     "ESIID": [self.esiid],
-                    "versionDate": None,
-                    "readDate": None,
-                    "versionNum": None,
                     "dataType": None,
+                    "endDate": end_date.strftime("%m/%d/%Y"),
+                    "readDate": None,
+                    "reportFormat": "JSON",
+                    "startDate": start_date.strftime("%m/%d/%Y"),
+                    "versionDate": None,
+                    "versionNum": None,
                 },
             )
             try:
@@ -221,6 +221,10 @@ class Meter:
                         interval_end.append(time)
                         types.append("Consumption" if e_type ==
                                      "C" else "Surplus Generation")
+                        # Weird edge case, consumption is 0?
+                        if use == "-":
+                            use = "0-E"
+
                         parsed_usage = use.split("-")
                         usage.append(float(parsed_usage[0]))
                         est_actual.append(parsed_usage[1])
